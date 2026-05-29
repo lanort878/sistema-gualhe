@@ -6,12 +6,18 @@ def obtener_conexion():
         # El sistema buscará primero los secretos (en local o en la nube)
         if "postgres" in st.secrets:
             db_config = st.secrets["postgres"]
+           def obtener_conexion():
+    try:
+        # El sistema buscará primero los secretos (en local o en la nube)
+        if "postgres" in st.secrets:
+            db_config = st.secrets["postgres"]
             conexion = psycopg2.connect(
                 host=db_config["host"],
                 database=db_config["database"],
                 user=db_config["user"],
                 password=db_config["password"],
-                port=db_config["port"]
+                port=db_config["port"],
+                sslmode="require"
             )
         else:
             # Fallback de respaldo por si ejecutas en local de la forma antigua
