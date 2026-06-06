@@ -80,6 +80,52 @@ def generar_pdf_nota(id_nota, nombre_cliente, fecha, items, estado="Pagado"):
     # Solución aplicada para FPDF en Streamlit Cloud
     return pdf.output(dest='S').encode('latin-1')
 
+# --- 📄 FUNCIÓN PARA GENERAR PDF DE PROVEEDOR AGRUPADO ---
+def generar_pdf_proveedor_agrupado(nombre_proveedor, fecha_inicio, fecha_fin, items):
+    pdf = FPDF(format='letter')
+    pdf.add_page()
+    pdf.set_margins(15, 15, 15)
+    
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, "DISTRIBUIDORA GUALHE", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 5, "Reporte Consolidado de Recepción de Materia Prima", ln=True, align="C")
+    pdf.ln(5)
+    
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, f"Proveedor: {nombre_proveedor}", ln=True)
+    pdf.cell(0, 6, f"Periodo: {fecha_inicio} al {fecha_fin}", ln=True)
+    pdf.ln(5)
+    
+    pdf.set_fill_color(220, 235, 255)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(15, 8, "Lote", border=1, fill=True, align="C")
+    pdf.cell(70, 8, "Producto", border=1, fill=True)
+    pdf.cell(25, 8, "Kilos", border=1, fill=True, align="C")
+    pdf.cell(20, 8, "Cajas", border=1, fill=True, align="C")
+    pdf.cell(25, 8, "Costo/Kg", border=1, fill=True, align="C")
+    pdf.cell(25, 8, "Total", border=1, fill=True, align="C")
+    pdf.ln()
+    
+    pdf.set_font("Helvetica", "", 10)
+    gran_total = 0.0
+    for item in items:
+        total_lote = float(item['kg']) * float(item['costo'])
+        pdf.cell(15, 7, f"#{item['id_lote']}", border=1, align="C")
+        pdf.cell(70, 7, f" {item['producto']}", border=1)
+        pdf.cell(25, 7, f"{float(item['kg']):.2f}", border=1, align="C")
+        pdf.cell(20, 7, f"{item['cajas']}", border=1, align="C")
+        pdf.cell(25, 7, f"${float(item['costo']):.2f}", border=1, align="C")
+        pdf.cell(25, 7, f"${total_lote:,.2f}", border=1, align="C")
+        pdf.ln()
+        gran_total += total_lote
+        
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(155, 8, "VALOR TOTAL CONSOLIDADO: ", align="R")
+    pdf.cell(25, 8, f"${gran_total:,.2f}", border=1, ln=True, fill=True, align="C")
+    
+    return pdf.output(dest='S').encode('latin-1')
+
 # --- 📄 FUNCIÓN PARA GENERAR EL PDF DE LA NOTA DE ENTRADA ---
 def generar_pdf_proveedor(id_lote, nombre_proveedor, producto, kg, cajas, costo, fecha):
     pdf = FPDF(format='letter')
@@ -1034,6 +1080,24 @@ elif opcion == "📑 Historial de Notas":
             finally: cursor.close(); conn.close()
 
     with tab_proveedores:
+        # ... (código existente de filtros) ...
+        
+        st.write("---")
+        st.markdown("#### 📦 Reporte Unificado por Proveedor")
+        prov_reimpresion = st.selectbox("Selecciona proveedor para reporte consolidado:", list(set([r[2] for r in records_p])))
+        
+        if st.button("⚙️ Generar PDF Consolidado del Proveedor"):
+            datos_agrupados = [
+                {"id_lote": r[0], "producto": r[3], "kg": r[4], "cajas": r[5], "costo": r[6]} 
+                for r in records_p if r[2] == prov_reimpresion
+            ]
+            pdf_data = generar_pdf_proveedor_agrupado(prov_reimpresion, str(f_inicio_p), str(f_hoy), datos_agrupados)
+            st.download_button(
+                label="📥 Descargar PDF Consolidado",
+                data=pdf_data,
+                file_name=f"Reporte_{prov_reimpresion}_{f_hoy}.pdf",
+                mime="application/pdf"
+            )
         filtro_tiempo_p = st.selectbox("Rango Proveedores:", ["Hoy", "Esta Semana", "Este Mes"], key="t_prov")
         f_inicio_p = fecha_hoy if filtro_tiempo_p == "Hoy" else (fecha_hoy - timedelta(days=fecha_hoy.weekday()) if filtro_tiempo_p == "Esta Semana" else fecha_hoy.replace(day=1))
         conn = obtener_conexion()
