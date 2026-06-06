@@ -77,7 +77,8 @@ def generar_pdf_nota(id_nota, nombre_cliente, fecha, items, estado="Pagado"):
     pdf.cell(0, 5, "* Esta nota constituye un comprobante de entrega de producto en andén/reparto.", ln=True, align="C")
     pdf.cell(0, 5, "¡Gracias por su preferencia!", ln=True, align="C")
     
-    return bytes(pdf.output())
+    # Solución aplicada para FPDF en Streamlit Cloud
+    return pdf.output(dest='S').encode('latin-1')
 
 # --- 📄 FUNCIÓN PARA GENERAR EL PDF DE LA NOTA DE ENTRADA ---
 def generar_pdf_proveedor(id_lote, nombre_proveedor, producto, kg, cajas, costo, fecha):
@@ -129,7 +130,8 @@ def generar_pdf_proveedor(id_lote, nombre_proveedor, producto, kg, cajas, costo,
     pdf.set_font("Helvetica", "I", 9)
     pdf.cell(0, 5, "* Esta nota valida los pesos y costos capturados en el sistema para control interno.", ln=True, align="C")
     
-    return bytes(pdf.output())
+    # Solución aplicada para FPDF en Streamlit Cloud
+    return pdf.output(dest='S').encode('latin-1')
 
 # --- 🔐 CONTROL DE ACCESO ---
 if not st.session_state.autenticado:
@@ -371,7 +373,6 @@ elif opcion == "⚖️ Entradas de Lotes":
         if conn is not None:
             try:
                 cursor = conn.cursor()
-                # Mostramos los últimos 50 lotes registrados para poder modificarlos
                 cursor.execute("""
                     SELECT l.id_lote, p.nombre_empresa, pr.nombre_producto, l.kg_recibidos, l.cantidad_cajas, l.costo_por_kg, l.fecha_entrada
                     FROM lotes_entrada l 
@@ -421,13 +422,12 @@ elif opcion == "⚖️ Entradas de Lotes":
                         
                     if btn_eliminar_lote:
                         try:
-                            # Intenta borrar el lote. Si ya fue usado en salidas_procesado, ventas o ajustes_inventario, Postgres arrojará una excepción de Foreign Key
                             cursor.execute("DELETE FROM lotes_entrada WHERE id_lote = %s;", (meta_lote["id"],))
                             conn.commit()
                             st.success(f"🗑️ Lote #{meta_lote['id']} eliminado completamente del andén.")
                             st.rerun()
                         except Exception as e:
-                            conn.rollback() # Deshacemos la transacción rota
+                            conn.rollback()
                             error_str = str(e).lower()
                             if "foreign key constraint" in error_str or "violates foreign key" in error_str or "llave foránea" in error_str:
                                 st.error("⚠️ ERROR: No puedes eliminar este lote porque ya tiene movimientos asociados (se registró deshuese, se vendió producto o se aplicaron mermas). Debes eliminar o corregir primero esos movimientos en los otros módulos.")
