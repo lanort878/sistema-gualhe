@@ -278,88 +278,164 @@ elif opcion == "📦 Catálogo de Productos":
                     finally: cursor.close(); conn.close()
 
 # ==========================================
-# MÓDULO 3: ENTRADAS DE LOTES
+# MÓDULO 3: ENTRADAS DE LOTES (CON PESTAÑAS DE CORRECCIÓN)
 # ==========================================
 elif opcion == "⚖️ Entradas de Lotes":
-    st.subheader("Registro de Entradas de Lotes (Materia Prima)")
-    proveedores_dict = {}
-    productos_dict = {}
-    conn = obtener_conexion()
-    if conn is not None:
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id_proveedor, nombre_empresa FROM proveedores;")
-            for p in cursor.fetchall(): proveedores_dict[p[1]] = p[0]
-            cursor.execute("SELECT id_producto, nombre_producto FROM productos WHERE tipo_producto = 'Materia Prima';")
-            for prod in cursor.fetchall(): productos_dict[prod[1]] = prod[0]
-        except Exception as e: st.error(f"Error: {e}")
-        finally: cursor.close(); conn.close()
+    st.subheader("⚖️ Gestión de Lotes (Materia Prima)")
+    
+    tab_registro, tab_edicion = st.tabs(["⚖️ Registrar Lote de Entrada", "🛠️ Corregir / Eliminar Lote"])
+    
+    with tab_registro:
+        proveedores_dict = {}
+        productos_dict = {}
+        conn = obtener_conexion()
+        if conn is not None:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id_proveedor, nombre_empresa FROM proveedores;")
+                for p in cursor.fetchall(): proveedores_dict[p[1]] = p[0]
+                cursor.execute("SELECT id_producto, nombre_producto FROM productos WHERE tipo_producto = 'Materia Prima';")
+                for prod in cursor.fetchall(): productos_dict[prod[1]] = prod[0]
+            except Exception as e: st.error(f"Error: {e}")
+            finally: cursor.close(); conn.close()
 
-    if not proveedores_dict or not productos_dict:
-        st.warning("⚠️ Catálogos vacíos. Contacte al administrador.")
-    else:
-        with st.form("formulario_lote", clear_on_submit=True):
-            prov_seleccionado = st.selectbox("Selecciona el Proveedor:", list(proveedores_dict.keys()))
-            prod_seleccionado = st.selectbox("Selecciona el Producto Recibido:", list(productos_dict.keys()))
-            kg = st.number_input("Kilogramos Recibidos *", min_value=0.0, step=0.1, format="%.2f")
-            cajas = st.number_input("Cantidad de Cajas (Opcional)", min_value=0, step=1)
-            costo = st.number_input("Costo por Kilogramo ($) *", min_value=0.0, step=0.1, format="%.2f")
-            fecha_manual = st.date_input("Fecha de Entrada del Producto *")
-            boton_guardar_lote = st.form_submit_button("Registrar Entrada y Generar Lote")
+        if not proveedores_dict or not productos_dict:
+            st.warning("⚠️ Catálogos vacíos. Contacte al administrador.")
+        else:
+            with st.form("formulario_lote", clear_on_submit=True):
+                prov_seleccionado = st.selectbox("Selecciona el Proveedor:", list(proveedores_dict.keys()))
+                prod_seleccionado = st.selectbox("Selecciona el Producto Recibido:", list(productos_dict.keys()))
+                kg = st.number_input("Kilogramos Recibidos *", min_value=0.0, step=0.1, format="%.2f")
+                cajas = st.number_input("Cantidad de Cajas (Opcional)", min_value=0, step=1)
+                costo = st.number_input("Costo por Kilogramo ($) *", min_value=0.0, step=0.1, format="%.2f")
+                fecha_manual = st.date_input("Fecha de Entrada del Producto *")
+                boton_guardar_lote = st.form_submit_button("Registrar Entrada y Generar Lote")
 
-        if boton_guardar_lote:
-            if kg <= 0 or costo <= 0: st.error("⚠️ Deben ser mayores a cero.")
-            else:
-                id_prov_real = proveedores_dict[prov_seleccionado]
-                id_prod_real = productos_dict[prod_seleccionado]
-                conn = obtener_conexion()
-                if conn is not None:
-                    try:
-                        cursor = conn.cursor()
+            if boton_guardar_lote:
+                if kg <= 0 or costo <= 0: st.error("⚠️ Deben ser mayores a cero.")
+                else:
+                    id_prov_real = proveedores_dict[prov_seleccionado]
+                    id_prod_real = productos_dict[prod_seleccionado]
+                    conn = obtener_conexion()
+                    if conn is not None:
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute("""
+                                INSERT INTO lotes_entrada (id_proveedor, id_producto, kg_recibidos, cantidad_cajas, costo_por_kg, fecha_entrada) 
+                                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id_lote;
+                            """, (id_prov_real, id_prod_real, kg, cajas, costo, fecha_manual))
+                            id_lote_generado = cursor.fetchone()[0]
+                            conn.commit()
+                            
+                            pdf_prov_data = generar_pdf_proveedor(id_lote_generado, prov_seleccionado, prod_seleccionado, kg, cajas, costo, str(fecha_manual))
+                            st.session_state["ultimo_pdf_prov"] = pdf_prov_data
+                            st.session_state["ultimo_pdf_prov_name"] = f"Entrada_Lote_{id_lote_generado}_{prov_seleccionado}.pdf"
+                            
+                            st.success(f"🎉 ¡Lote registrado con éxito! **ID DE LOTE: {id_lote_generado}**")
+                            st.rerun()
+                        except Exception as e: st.error(f"❌ Error al guardar el lote: {e}")
+                        finally: cursor.close(); conn.close()
+
+            if "ultimo_pdf_prov" in st.session_state and st.session_state["ultimo_pdf_prov"] is not None:
+                st.write("---")
+                st.download_button(
+                    label="🖨️ DESCARGAR NOTA DE ENTRADA DEL PROVEEDOR (PDF)",
+                    data=st.session_state["ultimo_pdf_prov"],
+                    file_name=st.session_state["ultimo_pdf_prov_name"],
+                    mime="application/pdf"
+                )
+
+        st.write("---")
+        st.subheader("📋 Inventario de Lotes Recibidos")
+        conn = obtener_conexion()
+        if conn is not None:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT l.id_lote, p.nombre_empresa, pr.nombre_producto, l.kg_recibidos, l.cantidad_cajas, l.costo_por_kg, l.fecha_entrada
+                    FROM lotes_entrada l JOIN proveedores p ON l.id_proveedor = p.id_proveedor
+                    JOIN productos pr ON l.id_producto = pr.id_producto ORDER BY l.id_lote DESC;
+                """)
+                datos_lotes = cursor.fetchall()
+                if datos_lotes:
+                    st.table([{
+                        "ID Lote": f[0], "Proveedor": f[1], "Producto": f[2], "Kg Recibidos": float(f[3]), 
+                        "Cajas": f[4], "Costo/Kg": f"${float(f[5]):.2f}" if st.session_state.rol == "admin" else "RESTRINGIDO", "Fecha": str(f[6])
+                    } for f in datos_lotes])
+            except Exception as e: st.error(f"Error: {e}")
+            finally: cursor.close(); conn.close()
+
+    with tab_edicion:
+        st.markdown("### 🛠️ Corrección de Lotes Ingresados")
+        conn = obtener_conexion()
+        if conn is not None:
+            try:
+                cursor = conn.cursor()
+                # Mostramos los últimos 50 lotes registrados para poder modificarlos
+                cursor.execute("""
+                    SELECT l.id_lote, p.nombre_empresa, pr.nombre_producto, l.kg_recibidos, l.cantidad_cajas, l.costo_por_kg, l.fecha_entrada
+                    FROM lotes_entrada l 
+                    JOIN proveedores p ON l.id_proveedor = p.id_proveedor
+                    JOIN productos pr ON l.id_producto = pr.id_producto 
+                    ORDER BY l.id_lote DESC LIMIT 50;
+                """)
+                lotes_guardados = cursor.fetchall()
+                
+                if not lotes_guardados:
+                    st.info("No hay lotes registrados para corregir.")
+                else:
+                    dict_lotes = {}
+                    for lt in lotes_guardados:
+                        id_l, prov, prod, kg, cajas, costo, fecha = lt
+                        label = f"Lote #{id_l} - {prov} ({prod}) - {float(kg):.2f} Kg"
+                        dict_lotes[label] = {"id": id_l, "kg": float(kg), "cajas": cajas, "costo": float(costo), "fecha": fecha}
+                    
+                    lote_a_corregir = st.selectbox("Selecciona el lote que deseas modificar o eliminar:", list(dict_lotes.keys()))
+                    meta_lote = dict_lotes[lote_a_corregir]
+                    
+                    st.write("---")
+                    with st.form("form_corregir_lote"):
+                        st.markdown(f"**Modificando valores del Lote #{meta_lote['id']}**")
+                        col_k, col_c, col_co = st.columns(3)
+                        with col_k: nuevo_kg = st.number_input("Corregir Kilos:", min_value=0.01, value=meta_lote["kg"], step=0.1, format="%.2f")
+                        with col_c: nuevo_cajas = st.number_input("Corregir Cajas:", min_value=0, value=meta_lote["cajas"], step=1)
+                        with col_co: nuevo_costo = st.number_input("Corregir Costo ($):", min_value=0.01, value=meta_lote["costo"], step=0.1, format="%.2f")
+                        
+                        nueva_fecha = st.date_input("Corregir Fecha de Entrada:", value=meta_lote["fecha"])
+                        
+                        col_btn1, col_btn2 = st.columns(2)
+                        with col_btn1:
+                            btn_actualizar_lote = st.form_submit_button("💾 Actualizar Valores del Lote", type="primary")
+                        with col_btn2:
+                            btn_eliminar_lote = st.form_submit_button("🗑️ Eliminar Lote por Completo")
+                    
+                    if btn_actualizar_lote:
                         cursor.execute("""
-                            INSERT INTO lotes_entrada (id_proveedor, id_producto, kg_recibidos, cantidad_cajas, costo_por_kg, fecha_entrada) 
-                            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id_lote;
-                        """, (id_prov_real, id_prod_real, kg, cajas, costo, fecha_manual))
-                        id_lote_generado = cursor.fetchone()[0]
+                            UPDATE lotes_entrada 
+                            SET kg_recibidos = %s, cantidad_cajas = %s, costo_por_kg = %s, fecha_entrada = %s
+                            WHERE id_lote = %s;
+                        """, (nuevo_kg, nuevo_cajas, nuevo_costo, nueva_fecha, meta_lote["id"]))
                         conn.commit()
-                        
-                        pdf_prov_data = generar_pdf_proveedor(id_lote_generado, prov_seleccionado, prod_seleccionado, kg, cajas, costo, str(fecha_manual))
-                        st.session_state["ultimo_pdf_prov"] = pdf_prov_data
-                        st.session_state["ultimo_pdf_prov_name"] = f"Entrada_Lote_{id_lote_generado}_{prov_seleccionado}.pdf"
-                        
-                        st.success(f"🎉 ¡Lote registrado con éxito! **ID DE LOTE: {id_lote_generado}**")
+                        st.success(f"🎉 Valores del Lote #{meta_lote['id']} actualizados correctamente en el sistema.")
                         st.rerun()
-                    except Exception as e: st.error(f"❌ Error al guardar el lote: {e}")
-                    finally: cursor.close(); conn.close()
-
-        if "ultimo_pdf_prov" in st.session_state and st.session_state["ultimo_pdf_prov"] is not None:
-            st.write("---")
-            st.download_button(
-                label="🖨️ DESCARGAR NOTA DE ENTRADA DEL PROVEEDOR (PDF)",
-                data=st.session_state["ultimo_pdf_prov"],
-                file_name=st.session_state["ultimo_pdf_prov_name"],
-                mime="application/pdf"
-            )
-
-    st.write("---")
-    st.subheader("📋 Inventario de Lotes Recibidos")
-    conn = obtener_conexion()
-    if conn is not None:
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT l.id_lote, p.nombre_empresa, pr.nombre_producto, l.kg_recibidos, l.cantidad_cajas, l.costo_por_kg, l.fecha_entrada
-                FROM lotes_entrada l JOIN proveedores p ON l.id_proveedor = p.id_proveedor
-                JOIN productos pr ON l.id_producto = pr.id_producto ORDER BY l.id_lote DESC;
-            """)
-            datos_lotes = cursor.fetchall()
-            if datos_lotes:
-                st.table([{
-                    "ID Lote": f[0], "Proveedor": f[1], "Producto": f[2], "Kg Recibidos": float(f[3]), 
-                    "Cajas": f[4], "Costo/Kg": f"${float(f[5]):.2f}" if st.session_state.rol == "admin" else "RESTRINGIDO", "Fecha": str(f[6])
-                } for f in datos_lotes])
-        except Exception as e: st.error(f"Error: {e}")
-        finally: cursor.close(); conn.close()
+                        
+                    if btn_eliminar_lote:
+                        try:
+                            # Intenta borrar el lote. Si ya fue usado en salidas_procesado, ventas o ajustes_inventario, Postgres arrojará una excepción de Foreign Key
+                            cursor.execute("DELETE FROM lotes_entrada WHERE id_lote = %s;", (meta_lote["id"],))
+                            conn.commit()
+                            st.success(f"🗑️ Lote #{meta_lote['id']} eliminado completamente del andén.")
+                            st.rerun()
+                        except Exception as e:
+                            conn.rollback() # Deshacemos la transacción rota
+                            error_str = str(e).lower()
+                            if "foreign key constraint" in error_str or "violates foreign key" in error_str or "llave foránea" in error_str:
+                                st.error("⚠️ ERROR: No puedes eliminar este lote porque ya tiene movimientos asociados (se registró deshuese, se vendió producto o se aplicaron mermas). Debes eliminar o corregir primero esos movimientos en los otros módulos.")
+                            else:
+                                st.error(f"Error al eliminar el lote: {e}")
+                            
+            except Exception as e: st.error(f"Error en panel de corrección de lotes: {e}")
+            finally: cursor.close(); conn.close()
 
 # ==========================================
 # MÓDULO 4: 🔪 PROCESAMIENTO
@@ -741,7 +817,7 @@ elif opcion == "❄️ Almacén y Ajustes":
                     finally: cursor.close(); conn.close()
 
 # ==========================================
-# MÓDULO 7: 💵 CONTROL DE COBRANZA (PERIODO DINÁMICO REFORZADO)
+# MÓDULO 7: 💵 CONTROL DE COBRANZA
 # ==========================================
 elif opcion == "💵 Control de Cobranza":
     st.subheader("💵 Panel de Cobranza y Liquidación en Vivo")
@@ -750,10 +826,8 @@ elif opcion == "💵 Control de Cobranza":
     f_hoy = datetime.now().date()
     
     with tab_captura:
-        # 📅 SE AÑADE LA OPCIÓN DE DÍA ESPECÍFICO EN EL SELECTOR DE PERIODO
         rango_cobro = st.selectbox("Selecciona el periodo de consulta de cobros:", ["Hoy", "📅 Día Específico", "Esta Semana", "Este Mes"])
         
-        # Lógica de fechas ajustada para reaccionar dinámicamente al calendario manual
         if rango_cobro == "Hoy":
             f_inicio = f_hoy
             f_fin = f_hoy
@@ -764,7 +838,7 @@ elif opcion == "💵 Control de Cobranza":
         elif rango_cobro == "Esta Semana":
             f_inicio = f_hoy - timedelta(days=f_hoy.weekday())
             f_fin = f_hoy
-        else: # Este Mes
+        else:
             f_inicio = f_hoy.replace(day=1)
             f_fin = f_hoy
         
